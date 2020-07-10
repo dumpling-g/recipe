@@ -1,0 +1,257 @@
+<div class="layui-fluid layui-anim febs-anim" id="febs-recipe" lay-title="菜谱管理">
+    <div class="layui-row febs-container">
+        <div class="layui-col-md12">
+            <div class="layui-card">
+                <div class="layui-card-body febs-table-full">
+                    <form class="layui-form layui-table-form" lay-filter="recipe-table-form">
+                        <div class="layui-row">
+                            <div class="layui-col-md10">
+                                <div class="layui-form-item">
+                                    <div class="layui-inline">
+                                        <label class="layui-form-label layui-form-label-sm">标题</label>
+                                        <div class="layui-input-inline">
+                                            <input type="text" name="title" autocomplete="off" class="layui-input">
+                                        </div>
+                                    </div>
+                                    <div class="layui-inline">
+                                        <label class="layui-form-label layui-form-label-sm">创建时间</label>
+                                        <div class="layui-input-inline">
+                                            <input type="text" name="creatTime" id="createTime" class="layui-input">
+                                        </div>
+                                    </div>
+                                    <div class="layui-inline">
+                                        <label class="layui-form-label layui-form-label-sm">状态</label>
+                                        <div class="layui-input-inline">
+                                            <select name="status">
+                                                <option value="">全部</option>
+                                                <option value="1">草稿</option>
+                                                <option value="2">发布</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="layui-col-md2 layui-col-sm12 layui-col-xs12 table-action-area">
+                                <div class="layui-btn layui-btn-sm layui-btn-primary table-action" id="query">
+                                    <i class="layui-icon">&#xe848;</i>
+                                </div>
+                                <div class="layui-btn layui-btn-sm layui-btn-primary table-action" id="reset">
+                                    <i class="layui-icon">&#xe79b;</i>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                    <table lay-filter="recipeTable" lay-data="{id: 'recipeTable'}"></table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script type="text/html" id="recipe-status">
+    {{#
+    var status = {
+    1: {title: '草稿', color: 'green'},
+    2: {title: '发布', color: 'volcano'}
+    }[d.status];
+    }}
+    <span class="layui-badge febs-tag-{{status.color}}">{{ status.title }}</span>
+</script>
+
+<script type="text/html" id="recipe-option">
+    <span shiro:lacksPermission="recipe:update,recipe:delete">
+        <span class="layui-badge-dot febs-bg-orange"></span> 无权限
+    </span>
+    <a lay-event="edit" shiro:hasPermission="recipe:update"><i
+            class="layui-icon febs-edit-area febs-blue">&#xe7a4;</i></a>
+    <a lay-event="del" shiro:hasPermission="recipe:delete"><i
+            class="layui-icon febs-edit-area febs-red">&#xe7f9;</i></a>
+</script>
+<script type="text/html" id="recipeToolbar">
+    <div class="layui-btn-container">
+        <button class="layui-btn layui-btn-sm" lay-event="add" shiro:hasPermission="recipe:add">添加</button>
+        <button class="layui-btn layui-btn-sm  layui-btn-danger" lay-event="delete" shiro:hasPermission="recipe:delete">
+            删除
+        </button>
+        <button class="layui-btn layui-btn-sm " style="background-color: #009688;" lay-event="publish"
+                shiro:hasPermission="recipe:publish">发布
+        </button>
+        <button class="layui-btn layui-btn-sm layui-btn-warm" lay-event="unpublish" shiro:hasPermission="recipe:publish">
+            取消发布
+        </button>
+    </div>
+</script>
+<script data-th-inline="none" type="text/javascript">
+    layui.use(['dropdown', 'jquery', 'laydate', 'form', 'table', 'febs', 'upload'], function () {
+        var $ = layui.jquery,
+            laydate = layui.laydate,
+            febs = layui.febs,
+            form = layui.form,
+            table = layui.table,
+
+            $view = $('#febs-recipe'),
+            $query = $view.find('#query'),
+            $reset = $view.find('#reset'),
+            $searchForm = $view.find('form'),
+            tableIns,
+            createTimeFrom,
+            createTimeTo;
+
+        form.render();
+
+        initTable();
+
+        laydate.render({
+            elem: '#createTime',
+            range: true,
+            trigger: 'click'
+        });
+
+        table.on('tool(recipeTable)', function (obj) {
+            var data = obj.data,
+                layEvent = obj.event;
+            if (layEvent === 'del') {
+                febs.modal.confirm('删除菜谱', '确定删除该菜谱？', function () {
+                    deleteRecipes(data.id);
+                });
+            }
+            if (layEvent === 'edit') {
+                febs.modal.open('修改菜谱', 'recipe/edit/' + data.id, {
+                    area: $(window).width() <= 750 ? '90%' : '50%',
+                    btn: ['提交', '取消'],
+                    yes: function (index, layero) {
+                        $('#recipe-edit').find('#submit').trigger('click');
+                    },
+                    btn2: function () {
+                        layer.closeAll();
+                    }
+                });
+            }
+        });
+
+        table.on('toolbar(recipeTable)', function (obj) {
+            switch (obj.event) {
+                case 'add':
+                    febs.modal.open('添加菜谱', 'recipe/add', {
+                        btn: ['保存', '取消'],
+                        area: ['60%', '75%'],
+                        yes: function () {
+                            $('#recipe-add').find('#submit').trigger('click');
+                        },
+                        cancel: function () {
+                            layer.closeAll();
+                        }
+                    });
+                    break;
+                case 'delete':
+                    var checkStatus = table.checkStatus('recipeTable')
+                        , data = checkStatus.data;
+                    var delParam = []
+                    data.forEach(function (t) {
+                        delParam.push(t.id)
+                    })
+                    var checked = delParam.length
+                    if (checked === 0) {
+                        layer.msg('请先选择菜谱再进行删除操作！');
+                        return false
+                    }
+                    febs.modal.confirm('删除菜谱', '确定要执行此操作？', function () {
+                        deleteRecipes(delParam.join(","));
+                    });
+                    break;
+                case 'publish':
+                    var checkStatus = table.checkStatus('recipeTable')
+                        , data = checkStatus.data;
+                    var delParam = []
+                    data.forEach(function (t) {
+                        delParam.push(t.id)
+                    })
+                    var checked = delParam.length
+                    if (checked === 0) {
+                        layer.msg('请先选择菜谱再进行发布操作！');
+                        return false
+                    }
+                    febs.modal.confirm('发布菜谱', '确定要执行此操作？', function () {
+                        changeStatus(delParam.join(","), 2);
+                    });
+                    break;
+                case 'unpublish':
+                    var checkStatus = table.checkStatus('recipeTable')
+                        , data = checkStatus.data;
+                    var delParam = []
+                    data.forEach(function (t) {
+                        delParam.push(t.id)
+                    })
+                    var checked = delParam.length
+                    if (checked === 0) {
+                        layer.msg('请先选择菜谱再进行取消发布操作！');
+                        return false
+                    }
+                    febs.modal.confirm('取消发布菜谱', '确定要执行此操作？', function () {
+                        changeStatus(delParam.join(","), 1);
+                    });
+                    break;
+            }
+            ;
+        })
+
+        $query.on('click', function () {
+            var params = getQueryParams();
+            tableIns.reload({where: params, page: {curr: 1}});
+        });
+
+        $reset.on('click', function () {
+            $searchForm[0].reset();
+            createTimeTo = null;
+            createTimeFrom = null;
+            tableIns.reload({where: getQueryParams(), page: {curr: 1}});
+        });
+
+        function initTable() {
+            tableIns = febs.table.init({
+                elem: $view.find('table'),
+                id: 'recipeTable',
+                url: ctx + 'recipe/list',
+                defaultToolbar: [],
+                toolbar: '#recipeToolbar',
+                cols: [[
+                    {type: 'checkbox'},
+                    {field: 'title', title: '标题', minWidth: 100},
+                    {title: '状态', templet: '#recipe-status'},
+                    {field: 'viewCount', title: '浏览', minWidth: 100},
+                    {field: 'createTime', title: '创建时间', minWidth: 180},
+                    {field: 'updateTime', title: '更新时间', minWidth: 180},
+                    {title: '操作', toolbar: '#recipe-option', minWidth: 140}
+                ]]
+            });
+        }
+
+        function getQueryParams() {
+            var createTime = $searchForm.find('input[name="createTime"]').val();
+            if (createTime) {
+                createTimeFrom = createTime.split(' - ')[0];
+                createTimeTo = createTime.split(' - ')[1];
+            }
+            return {
+                createTimeFrom: createTimeFrom,
+                createTimeTo: createTimeTo,
+                title: $searchForm.find('input[name="title"]').val().trim(),
+                status: $searchForm.find("select[name='status']").val(),
+                invalidate_ie_cache: new Date()
+            };
+        }
+
+        function deleteRecipes(ids) {
+            febs.get(ctx + 'recipe/delete/' + ids, null, function () {
+                febs.alert.success('删除菜谱成功');
+                $query.click();
+            });
+        }
+
+        function changeStatus(ids, status) {
+            febs.get(ctx + 'recipe/changeStatus/' + status +"/" + ids, null, function () {
+                febs.alert.success('操作成功');
+                $query.click();
+            });
+        }
+    })
+</script>
